@@ -1,6 +1,13 @@
 Tag based FUSE filesystem utilizing Tracker
 ============================================
 
+Dependencies (Fedora)
+---------------------
+
+Install the following deps::
+
+   dnf install python3-fusepy zenity -y
+
 Using
 ------
 
