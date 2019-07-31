@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+
+from gi.repository import Tracker
+import subprocess
+import os
+import sys
+from urllib.parse import quote
+
+class TrackerWrapper(object):
+
+    def __init__(self):
+        self.conn = Tracker.SparqlConnection.get (None)
+
+    def tags(self):
+        cursor = self.conn.query ("SELECT ?labels  WHERE { ?tags a nao:Tag; nao:prefLabel ?labels; }", None)
+        while (cursor.next(None)):
+            d = cursor.get_string(0)[0]
+            yield(d)
+
+    def tag(self, tag, path):
+        cursor = self.conn.update('''
+            INSERT {
+              ?unknown nao:hasTag ?id
+            } WHERE {
+              ?unknown nie:isStoredAs ?as .
+              ?as nie:url 'file://%(path)s' .
+              ?id nao:prefLabel '%(tag)s'
+            }''' % {'tag': tag, 'path': quote(path)}, 0, None)
+
+
+tracker = TrackerWrapper()
+
+tags = list(tracker.tags())
+
+cmd = ['zenity','--list','--checklist', '--column=Select',
+    '--column=Tag','--separator','\n']
+
+for t in tags:
+    cmd.append(t)
+    cmd.append(t)
+
+proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+
+proc.wait()
+
+seltags = proc.stdout.read().strip().decode('utf-8').split('\n')
+
+files = os.environ.get('NAUTILUS_SCRIPT_SELECTED_FILE_PATHS','').strip().split('\n')
+
+if not seltags:
+    sys.exit()
+
+proc = subprocess.Popen(['zenity','--progress','--pulsate','--no-cancel', '--auto-close'])
+
+for tag in seltags:
+    for f in files:
+        sys.stderr.write(tag + '  ' + f + '\n\n')
+        tracker.tag(tag, f)
+
+proc.terminate()
+
+proc = subprocess.Popen(['zenity','--notification','--text', 'Tagged %s files' %
+    len(files)]).wait()
