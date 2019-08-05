@@ -19,6 +19,8 @@ from time import time
 CACHE = {}
 DEBUG = False
 
+STAGING = {}
+
 class TrackerWrapper(object):
 
     def __init__(self):
@@ -38,14 +40,20 @@ class TrackerWrapper(object):
 
         files = []
         cursor = self.conn.query ('''
-                SELECT nfo:fileName(?f) nie:url(?f) WHERE {
+                SELECT nfo:fileName(?f) nie:url(?f) ?f WHERE {
                     ?f a nfo:FileDataObject ; 
                         nao:hasTag [ nao:prefLabel "%s" ] }''' % tag, None)
 
         while (cursor.next(None)):
             d = cursor.get_string(0)[0]
             u = cursor.get_string(1)[0]
-            files.append(u)
+            urn = cursor.get_string(2)[0]
+            files.append({
+                'fileName': d,
+                'uri': u,
+                'urn': urn,
+                'fileNameUrn': self._add_urn(d, urn)
+            })
 
         CACHE.setdefault('files', {})
         CACHE['files'].setdefault(tag, {})
@@ -54,9 +62,19 @@ class TrackerWrapper(object):
         return files
 
 
+    def _add_urn(self, filename, urn):
+        us = urn.split(':')[-1]
+        f = filename.split('.')
+        f.insert(-1, us)
+        return '.'.join(f)
+
     def get_file(self, tag, name):
         for f in self.files(tag):
-            if os.path.basename(f) == name:
+            if f['fileNameUrn'] == name:
+                return f
+
+        for f in STAGING['files'].get(tag, []):
+            if f['fileName'] == name:
                 return f
 
     def create_tag(self, tag):
@@ -135,14 +153,21 @@ class TagFS(LoggingMixIn, Operations):
             tag = path[1:]
             files = self.tracker.files(tag)
             for u in files:
-                yield os.path.basename(u)
+                yield u['fileNameUrn']
+            
+            STAGING.setdefault('files', {})
+            for sf in STAGING['files'].get(tag, []):
+                if int(time()) - sf['exp'] < 0:
+                    yield sf['fileName']
+                else:
+                    STAGING['files'][tag].remove(sf)
 
 
 
     def readlink(self, path):
         tag, name = path[1:].split('/')
-        url = self.tracker.get_file(tag, name)
-        up = urlparse(url)
+        f = self.tracker.get_file(tag, name)
+        up = urlparse(f['uri'])
         return unquote(up.path)
 
     def rmdir(self, path):
@@ -166,14 +191,24 @@ class TagFS(LoggingMixIn, Operations):
         tag, dest = target[1:].split('/')
         self.tracker.tag(tag, source)
 
+        STAGING.setdefault('files', {})
+        STAGING['files'].setdefault(tag, [])
+        STAGING['files'][tag].append({
+                'fileName': os.path.basename(target),
+                'exp': int(time()) + 5,
+                'uri': 'file://' + source,
+                'fileNameUrn': os.path.basename(target)
+        })
+
         CACHE['files'][tag] = {} # flush
 
     def unlink(self, path):
         if path.count('/') == 1:
             raise FuseOSError(EOPNOTSUPP)
-        tag, url = path[1:].split('/')
-        url = unquote(urlparse(url).path)
-        self.tracker.untag(tag, url)
+        tag, name = path[1:].split('/')
+        f = self.tracker.get_file(tag, name)
+        uri = f['uri']
+        self.tracker.untag(tag, uri)
 
         CACHE['files'][tag] = {} # flush
 
