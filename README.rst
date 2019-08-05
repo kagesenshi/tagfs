@@ -41,8 +41,6 @@ Features
 Limitations
 ------------
 
-* If there are 2 files tagged with the same tag, only the first one will
-  appear. This is a limitation of ``fusepy`` API itself, as there are no way to 
-  distinguish a file besides using filepath. 
-
+* Filenames are appended with the internal tracker UUID to handle cases where if there are 
+  2 files tagged with the same tag. So filenames might be a bit messy.
 
