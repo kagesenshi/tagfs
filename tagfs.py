@@ -17,7 +17,6 @@ from errno import *
 from time import time
 
 CACHE = {}
-DEBUG = False
 
 STAGING = {}
 
@@ -223,6 +222,7 @@ def main():
     import argparse
     import logging
     parser = argparse.ArgumentParser()
+    parser.add_argument('-d','--debug', dest='debug', action='store_true')
     parser.add_argument('mount')
     args = parser.parse_args()
 
@@ -234,9 +234,10 @@ def main():
         'allow_other': False
     }
 
-    if not DEBUG:
+    if not args.debug:
         opts['foreground'] = False
         opts['nothreads'] = False
+    
 
     fuse = FUSE(TagFS(), args.mount, **opts)
 
